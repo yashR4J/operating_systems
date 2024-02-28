@@ -1,0 +1,119 @@
+===============================================================================
+                             Design Documentation
+===============================================================================
+
+Course: COMP3231/3891/9201/9283 Operating Systems 2023 T1
+Authors: Yash Khandelwal (z5317349) and Zihang (z5286348)
+
+What significant data structures have you added and what function do they perform?
+-------------------------------------------------------------------------------
+
+1. struct fh (short for file handle): This structure represents a file handle and contains information 
+about the file, such as the access mode (flag), reference count (count), and the current file offset (offset).
+The access mode determines how the file can be accessed (read, write, etc.), the reference count is used
+to keep track of how many processes have the file open, and the file offset specifies the current position
+in the file.
+
+2. struct fnode: This structure represents a file node and contains a file handle (fh) and 
+a pointer to a vnode, which is a virtual representation of a file or directory in the filesystem. The file
+handle contains information about the file, while the vnode provides information about the file's location
+and attributes. 
+
+3. struct fnode file_table[FT_SIZE]: This is an array of struct fnode objects that serves as a 
+file table. It keeps track of all open files in the system and maps file descriptors to file nodes. This
+data structure is shared between all processes in the system.
+
+What are any significant issues surround managing the data structures and state do they contain?
+-------------------------------------------------------------------------------
+
+1. Thread safety: The file table and file handle structures are shared among all threads in 
+the system, so it is essential to ensure that modifications to these structures are atomic 
+and synchronized properly to avoid race conditions.
+
+What data structures are per-process and what structures are shared between processes?
+-------------------------------------------------------------------------------
+
+- the file table data structure (struct fnode file_table[FT_SIZE]) is a shared data structure 
+between processes. This is because all processes in the system can access the same file table.
+
+What is the main issues related to transferring data to and from applications?
+-------------------------------------------------------------------------------
+1. Data must be accurately transferred between the application and the underlying system 
+or other applications without any corruption or loss.
+2. Data transfers can consume significant system resources, such as memory, CPU, and network bandwidth. 
+Inefficient resource management will cause resource exhaustion.
+
+If fork() was implemented, what concurrency issues would be introduced to your implementation?
+-------------------------------------------------------------------------------
+1. If a child process modifies a file descriptor, the modification would affect the parent process as well, 
+since they share the same file table. This could lead to unexpected behavior and data corruption. Proper
+synchronization mechanisms would need to be in place (i.e. file locks and shared memory regions) to avoid
+conflicts between processes. 
+
+------------------------------------
+Data Structures and Helper Functions
+------------------------------------
+
+void initialise_file_table(void);
+void initialise_file_handle(int ft_index);
+
+    These helper functions initialise the file table that manages information about open files in a system. As aforementioned, 
+    the file table is an array of fnodes which contain a file handle and a pointer to a vnode. For simplicity in design, file
+    tables are static data structures, thereby removing any concern of memory allocation and deallocation. These structures
+    are also more efficient than dynamically allocated ones since they do not require heap memory allocation and can be accessed
+    more quickly with lower overhead. Additionally, the FT_SIZE was defined to be the maximum number of open files (128), and
+    having a fixed size makes the behaviour of the data structure more predictable.
+
+void decrement_fh_count(int ft_index);
+
+    Our design maintains a reference count of how many of the same file handles are open for a given file. Decrementing this count
+    enables us to safely close the file when the reference count reaches 0.
+
+int get_ft_index(int *ft_index);
+
+    This helper function returns an unused index on the file table.
+
+int get_fd(int *fd);
+
+    This helper function gets an available file descriptor required when opening a file. File descriptors 0, 1 and 2 are assigned
+    to stdin, stdout and stderr.
+
+
+int sys_open_ft(char *filename, int flags, int mode, int *ftindex);
+
+    This function opens a file and returns the file table index for the open file. This abstraction was separated from sys_open to
+    enable usage in runprogram.c, which requires calling sys_open for stdout and stderr and requires assignment of a file table
+    index to a specific file descriptor (1 and 2). It is also used by sys_open to reduce code repetition. 
+
+int sys_open(int a0, int a1, int a2, int *ret);
+
+    This sys_open function assigns the return argument to be the assigned file descriptor when a file is opened. As seen in proc.h,
+    a file descriptor table is maintained within each process (and the size is the same as FT_SIZE, the maximum number of open
+    files in a system).
+
+int sys_close(int fd);
+
+    This function closes a file for a given file descriptor. It calls the decrement_fh_count helper function to ensure that the
+    reference count for that fnode is properly updated.
+
+int sys_read(int a0, int a1, int a2, int32_t *ret);
+
+    This function reads data from an open file for a given file descriptor. It takes a file descriptor, a buffer to store the data,
+    and a count of bytes to read. The return parameter is used to return the number of bytes read.
+
+int sys_write(int a0, int a1, int a2, int32_t *ret);
+
+    This function writes data to an open file for a given file descriptor. It takes a file descriptor, a buffer of data to write,
+    and a count of bytes to write. The return parameter is used to return the number of bytes written.
+
+int sys_dup2(int oldfd, int newfd, int *retval);
+
+    This function duplicates an open file for a given old file descriptor and returns a new file descriptor value. If newfd is
+    currently being used, it is first closed. If a file descriptor is successfully duplicated, the reference count on the fnode
+    is incremented. The return parameter is used to return the new file descriptor.
+
+off_t sys_lseek(int fd, off_t pos, int whence, off_t *ret);
+
+    This function sets the file position of an open file. It is typically assumed this will be used in conjunction with the sys_read
+    and sys_write system calls to perform random access I/O on a file. It allows the program to set the file position to a specific
+    location before reading or writing data. 
